@@ -7,6 +7,7 @@ import '../services/settings_controller.dart';
 import '../utils/format.dart';
 import 'game_screen.dart';
 import 'stats_screen.dart';
+import 'tutorial_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.storage, required this.settings});
@@ -77,6 +78,10 @@ class _HomeScreenState extends State<HomeScreen> {
         MaterialPageRoute(builder: (_) => StatsScreen(storage: widget.storage)),
       );
 
+  void _openTutorial() => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const TutorialScreen()),
+      );
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -105,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 32),
 
-                    // Продолжить сохранённую игру
+                    // Продолжить
                     if (saved != null) ...[
                       SizedBox(
                         height: 64,
@@ -114,7 +119,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text('Продолжить', style: TextStyle(fontSize: 18)),
+                              const Text('Продолжить',
+                                  style: TextStyle(fontSize: 18)),
                               Text(
                                 '${saved.difficulty.label} · ${saved.mode.label} · '
                                 '${formatDuration(saved.elapsed)}',
@@ -127,7 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 24),
                     ],
 
-                    // Режим игры
+                    // Режим
                     const _SectionTitle('Режим'),
                     SegmentedButton<GameMode>(
                       segments: [
@@ -162,10 +168,26 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       ),
-                    OutlinedButton.icon(
-                      onPressed: _openStats,
-                      icon: const Icon(Icons.bar_chart),
-                      label: const Text('Статистика'),
+
+                    // Обучение и статистика
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _openTutorial,
+                            icon: const Icon(Icons.school),
+                            label: const Text('Обучение'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _openStats,
+                            icon: const Icon(Icons.bar_chart),
+                            label: const Text('Статистика'),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 24),
 
