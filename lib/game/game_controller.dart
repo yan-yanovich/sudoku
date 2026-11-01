@@ -341,3 +341,4 @@ class GameController extends ChangeNotifier {
     _elapsed.dispose();
     super.dispose();
   }
+}
