@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'sudoku_solver.dart';
+
 enum Difficulty { easy, medium, hard }
 
 extension DifficultyX on Difficulty {
@@ -9,54 +11,53 @@ extension DifficultyX on Difficulty {
         Difficulty.hard => 'Сложный',
       };
 
-  /// Сколько клеток пытаемся убрать из заполненной сетки.
-  int get cellsToRemove => switch (this) {
-        Difficulty.easy => 36,
-        Difficulty.medium => 46,
-        Difficulty.hard => 54,
+  /// Целевая оценка сложности (по техникам).
+  (int min, int max) get targetScore => switch (this) {
+        Difficulty.easy => (1, 1),    // только голые одиночки
+        Difficulty.medium => (2, 2),  // нужны скрытые одиночки
+        Difficulty.hard => (3, 10),   // пары или угадывание
       };
 }
 
 class SudokuPuzzle {
-  final List<List<int>> puzzle; // 0 = пустая клетка
-  final List<List<int>> solution;
-
   const SudokuPuzzle({required this.puzzle, required this.solution});
+
+  final List<List<int>> puzzle;
+  final List<List<int>> solution;
 }
 
 class SudokuGenerator {
-  final Random _random;
-
   SudokuGenerator([Random? random]) : _random = random ?? Random();
 
+  final Random _random;
+
+  /// Генерировать головоломку заданной сложности.
   SudokuPuzzle generate(Difficulty difficulty) {
-    // 1. Строим полностью заполненную корректную сетку.
-    final solution = List.generate(9, (_) => List.filled(9, 0));
-    _fillGrid(solution);
+    const maxAttempts = 50;
+    final target = difficulty.targetScore;
 
-    // 2. Убираем клетки, пока решение остаётся единственным.
-    final puzzle = copyGrid(solution);
-    final positions = List.generate(81, (i) => i)..shuffle(_random);
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      final solution = _generateSolution();
+      final puzzle = _createPuzzle(solution);
+      final score = rateDifficulty(puzzle);
 
-    var removed = 0;
-    for (final pos in positions) {
-      if (removed >= difficulty.cellsToRemove) break;
-      final r = pos ~/ 9;
-      final c = pos % 9;
-      final backup = puzzle[r][c];
-      puzzle[r][c] = 0;
-
-      if (countSolutions(puzzle, limit: 2) != 1) {
-        puzzle[r][c] = backup; // решение перестало быть единственным
-      } else {
-        removed++;
+      if (score >= target.$1 && score <= target.$2) {
+        return SudokuPuzzle(puzzle: puzzle, solution: solution);
       }
     }
 
+    // Не удалось подобрать — возвращаем последнюю попытку
+    final solution = _generateSolution();
+    final puzzle = _createPuzzle(solution);
     return SudokuPuzzle(puzzle: puzzle, solution: solution);
   }
 
-  /// Заполняет сетку случайным корректным решением (backtracking).
+  List<List<int>> _generateSolution() {
+    final grid = List.generate(9, (_) => List.filled(9, 0));
+    _fillGrid(grid);
+    return grid;
+  }
+
   bool _fillGrid(List<List<int>> grid) {
     for (var i = 0; i < 81; i++) {
       final r = i ~/ 9;
@@ -76,7 +77,116 @@ class SudokuGenerator {
     return true;
   }
 
-  /// Считает количество решений, но не больше [limit].
+  /// Создать головоломку из решения, удаляя клетки с сохранением единственности.
+  List<List<int>> _createPuzzle(List<List<int>> solution) {
+    final puzzle = copyGrid(solution);
+    final positions = List.generate(81, (i) => i)..shuffle(_random);
+
+    // Удаляем симметричные пары для более красивого паттерна
+    for (var i = 0; i < positions.length ~/ 2; i++) {
+      final pos1 = positions[i];
+      final pos2 = 80 - pos1; // симметричная клетка
+
+      final r1 = pos1 ~/ 9, c1 = pos1 % 9;
+      final r2 = pos2 ~/ 9, c2 = pos2 % 9;
+
+      final backup1 = puzzle[r1][c1];
+      final backup2 = puzzle[r2][c2];
+
+      puzzle[r1][c1] = 0;
+      if (r1 != r2 || c1 != c2) puzzle[r2][c2] = 0;
+
+      if (countSolutionsFast(puzzle, limit: 2) != 1) {
+        puzzle[r1][c1] = backup1;
+        puzzle[r2][c2] = backup2;
+      }
+    }
+
+    return puzzle;
+  }
+
+  /// Быстрый подсчёт решений с битовыми масками и MRV.
+  static int countSolutionsFast(List<List<int>> grid, {int limit = 2}) {
+    final rowMask = List.filled(9, 0);
+    final colMask = List.filled(9, 0);
+    final boxMask = List.filled(9, 0);
+
+    for (var r = 0; r < 9; r++) {
+      for (var c = 0; c < 9; c++) {
+        final v = grid[r][c];
+        if (v != 0) {
+          final bit = 1 << v;
+          rowMask[r] |= bit;
+          colMask[c] |= bit;
+          boxMask[r ~/ 3 * 3 + c ~/ 3] |= bit;
+        }
+      }
+    }
+
+    return _countSolutionsRec(grid, rowMask, colMask, boxMask, limit);
+  }
+
+  static int _countSolutionsRec(
+    List<List<int>> grid,
+    List<int> rowMask,
+    List<int> colMask,
+    List<int> boxMask,
+    int limit,
+  ) {
+    if (limit == 0) return 0;
+
+    // MRV: выбираем клетку с минимальным числом кандидатов
+    int minCandidates = 10;
+    int bestR = -1, bestC = -1;
+
+    for (var r = 0; r < 9; r++) {
+      for (var c = 0; c < 9; c++) {
+        if (grid[r][c] != 0) continue;
+        final box = r ~/ 3 * 3 + c ~/ 3;
+        final used = rowMask[r] | colMask[c] | boxMask[box];
+        final available = ~used & 0x3FE; // биты 1..9
+        final count = available.bitCount;
+
+        if (count == 0) return 0; // нет кандидатов — тупик
+        if (count < minCandidates) {
+          minCandidates = count;
+          bestR = r;
+          bestC = c;
+        }
+      }
+    }
+
+    if (bestR == -1) return 1; // все заполнены
+
+    final r = bestR;
+    final c = bestC;
+    final box = r ~/ 3 * 3 + c ~/ 3;
+    final used = rowMask[r] | colMask[c] | boxMask[box];
+
+    var count = 0;
+    for (var n = 1; n <= 9; n++) {
+      final bit = 1 << n;
+      if (used & bit != 0) continue;
+
+      grid[r][c] = n;
+      rowMask[r] |= bit;
+      colMask[c] |= bit;
+      boxMask[box] |= bit;
+
+      count += _countSolutionsRec(grid, rowMask, colMask, boxMask, limit - count);
+
+      grid[r][c] = 0;
+      rowMask[r] &= ~bit;
+      colMask[c] &= ~bit;
+      boxMask[box] &= ~bit;
+
+      if (count >= limit) return count;
+    }
+
+    return count;
+  }
+
+  /// Старый медленный countSolutions (для сравнения в тестах).
   static int countSolutions(List<List<int>> grid, {int limit = 2}) {
     for (var i = 0; i < 81; i++) {
       final r = i ~/ 9;
@@ -94,10 +204,9 @@ class SudokuGenerator {
       }
       return count;
     }
-    return 1; // пустых клеток нет, значит найдено одно решение
+    return 1;
   }
 
-  /// Можно ли поставить [num] в клетку (row, col).
   static bool isValidPlacement(List<List<int>> grid, int row, int col, int num) {
     for (var i = 0; i < 9; i++) {
       if (i != col && grid[row][i] == num) return false;
@@ -114,11 +223,8 @@ class SudokuGenerator {
   }
 }
 
-/// Копия сетки 9×9.
 List<List<int>> copyGrid(List<List<int>> grid) =>
     grid.map((row) => List<int>.from(row)).toList();
 
-/// Точка входа для compute(): генерация в отдельном изоляте,
-/// чтобы интерфейс не тормозил.
 SudokuPuzzle generatePuzzle(Difficulty difficulty) =>
     SudokuGenerator().generate(difficulty);
