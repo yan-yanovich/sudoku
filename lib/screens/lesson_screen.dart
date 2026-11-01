@@ -17,29 +17,66 @@ class LessonScreen extends StatefulWidget {
 class _LessonScreenState extends State<LessonScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  late final PracticeController _practiceController;
+  late final PracticeController _practice;
   late final Future<TutorialProgress> _progressFuture;
+
+  /// Было ли задание выполнено при прошлом уведомлении контроллера.
+  bool _wasCompleted = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _practiceController = PracticeController(widget.lesson.practice);
+    _practice = PracticeController(widget.lesson.practice);
+    _wasCompleted = _practice.completed;
+    _practice.addListener(_onPracticeChanged);
     _progressFuture = TutorialProgress.load();
     _markOpened();
   }
 
-  Future<void> _markOpened() async {
-    final progress = await _progressFuture;
-    await progress.markOpened(widget.lesson.id);
-  }
-
   @override
   void dispose() {
+    _practice.removeListener(_onPracticeChanged);
+    _practice.dispose();
     _tabController.dispose();
-    _practiceController.dispose();
     super.dispose();
   }
+
+  Future<void> _markOpened() async {
+    try {
+      final progress = await _progressFuture;
+      await progress.markOpened(widget.lesson.id);
+    } catch (_) {
+      // Прогресс не критичен для работы урока.
+    }
+  }
+
+  /// Срабатывает только в момент перехода «не решено → решено».
+  void _onPracticeChanged() {
+    final completed = _practice.completed;
+    if (completed && !_wasCompleted) _onCompleted();
+    _wasCompleted = completed;
+  }
+
+  Future<void> _onCompleted() async {
+    try {
+      final progress = await _progressFuture;
+      await progress.markCompleted(widget.lesson.id);
+    } catch (_) {
+      // Игнорируем ошибку сохранения.
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Урок пройден! 🎉'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  void _goToTab(int index) => _tabController.animateTo(index);
 
   @override
   Widget build(BuildContext context) {
@@ -49,21 +86,60 @@ class _LessonScreenState extends State<LessonScreen>
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
-            Tab(text: 'Теория'),
-            Tab(text: 'Пример'),
-            Tab(text: 'Практика'),
+            Tab(icon: Icon(Icons.menu_book_outlined), text: 'Теория'),
+            Tab(icon: Icon(Icons.visibility_outlined), text: 'Пример'),
+            Tab(icon: Icon(Icons.edit_note), text: 'Практика'),
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: SafeArea(
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            _TheoryTab(lesson: widget.lesson, onNext: () => _goToTab(1)),
+            _ExampleTab(lesson: widget.lesson, onNext: () => _goToTab(2)),
+            _PracticeTab(
+              controller: _practice,
+              onBack: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ───────────────────────── Теория ─────────────────────────
+
+class _TheoryTab extends StatelessWidget {
+  const _TheoryTab({required this.lesson, required this.onNext});
+
+  final Lesson lesson;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _CenteredScroll(
+      maxWidth: 600,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _TheoryTab(lesson: widget.lesson),
-          _ExampleTab(lesson: widget.lesson),
-          _PracticeTab(
-            controller: _practiceController,
-            progressFuture: _progressFuture,
-            lessonId: widget.lesson.id,
+          Text(
+            '${lesson.category.icon} ${lesson.category.title}',
+            style: theme.textTheme.labelLarge
+                ?.copyWith(color: theme.colorScheme.primary),
+          ),
+          const SizedBox(height: 12),
+          _RichTheory(text: lesson.theory),
+          const SizedBox(height: 24),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.tonalIcon(
+              onPressed: onNext,
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('К примеру'),
+            ),
           ),
         ],
       ),
@@ -71,122 +147,136 @@ class _LessonScreenState extends State<LessonScreen>
   }
 }
 
-class _TheoryTab extends StatelessWidget {
-  const _TheoryTab({required this.lesson});
+/// Текст теории с поддержкой разметки **жирный**.
+class _RichTheory extends StatelessWidget {
+  const _RichTheory({required this.text});
 
-  final Lesson lesson;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 600),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(lesson.theory, style: Theme.of(context).textTheme.bodyLarge),
-          ],
-        ),
+    final theme = Theme.of(context);
+    final base = theme.textTheme.bodyLarge?.copyWith(height: 1.5);
+    final bold = TextStyle(
+      fontWeight: FontWeight.bold,
+      color: theme.colorScheme.primary,
+    );
+    final parts = text.trim().split('**');
+
+    return Text.rich(
+      TextSpan(
+        style: base,
+        children: [
+          for (var i = 0; i < parts.length; i++)
+            TextSpan(text: parts[i], style: i.isOdd ? bold : null),
+        ],
       ),
     );
   }
 }
+
+// ───────────────────────── Пример ─────────────────────────
 
 class _ExampleTab extends StatelessWidget {
-  const _ExampleTab({required this.lesson});
+  const _ExampleTab({required this.lesson, required this.onNext});
 
   final Lesson lesson;
+  final VoidCallback onNext;
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500),
-          child: Column(
-            children: [
-              ExampleBoard(example: lesson.example),
-              const SizedBox(height: 16),
-              Text(lesson.example.caption,
-                  style: Theme.of(context).textTheme.bodyMedium),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  for (final color in MarkColor.values)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 20,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: markBackground(colors, color),
-                            border: Border.all(color: colors.outline),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(color.legend,
-                            style: Theme.of(context).textTheme.bodySmall),
-                      ],
-                    ),
-                ],
+    final theme = Theme.of(context);
+    return _CenteredScroll(
+      maxWidth: 500,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ExampleBoard(example: lesson.example),
+          const SizedBox(height: 12),
+          MarkLegend(marks: lesson.example.marks),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                lesson.example.caption,
+                style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
               ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.tonalIcon(
+              onPressed: onNext,
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('К практике'),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
+// ───────────────────────── Практика ─────────────────────────
+
 class _PracticeTab extends StatelessWidget {
-  const _PracticeTab({
-    required this.controller,
-    required this.progressFuture,
-    required this.lessonId,
-  });
+  const _PracticeTab({required this.controller, required this.onBack});
 
   final PracticeController controller;
-  final Future<TutorialProgress> progressFuture;
-  final String lessonId;
-
-  Future<void> _onCompleted(BuildContext context) async {
-    final progress = await progressFuture;
-    await progress.markCompleted(lessonId);
-  }
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
-        if (controller.completed) {
-          _onCompleted(context);
-        }
-        return Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 500),
-              child: Column(
-                children: [
-                  _FeedbackBanner(feedback: controller.feedback),
-                  const SizedBox(height: 12),
-                  PracticeBoard(controller: controller),
-                  const SizedBox(height: 16),
-                  _PracticeControls(controller: controller),
-                ],
-              ),
-            ),
+        final c = controller;
+        return _CenteredScroll(
+          maxWidth: 500,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _TaskCard(text: c.practice.task),
+              const SizedBox(height: 8),
+              _FeedbackBanner(feedback: c.feedback),
+              const SizedBox(height: 12),
+              PracticeBoard(controller: c),
+              const SizedBox(height: 16),
+              if (c.completed)
+                _CompletedCard(onRetry: c.reset, onBack: onBack)
+              else
+                _PracticeControls(controller: c),
+            ],
           ),
         );
       },
+    );
+  }
+}
+
+class _TaskCard extends StatelessWidget {
+  const _TaskCard({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.assignment_outlined, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(fontWeight: FontWeight.w500, height: 1.4),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -198,26 +288,87 @@ class _FeedbackBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final (bgColor, iconData) = switch (feedback.kind) {
-      FeedbackKind.info => (colors.surfaceContainerHigh, Icons.info_outline),
-      FeedbackKind.success => (colors.primaryContainer, Icons.check_circle_outline),
-      FeedbackKind.error => (colors.errorContainer, Icons.error_outline),
-      FeedbackKind.hint => (Colors.amber.shade100, Icons.lightbulb_outline),
+    final s = Theme.of(context).colorScheme;
+    final (bg, fg, icon) = switch (feedback.kind) {
+      FeedbackKind.info => (s.surfaceContainerHigh, s.onSurface, Icons.info_outline),
+      FeedbackKind.success =>
+        (s.primaryContainer, s.onPrimaryContainer, Icons.check_circle_outline),
+      FeedbackKind.error =>
+        (s.errorContainer, s.onErrorContainer, Icons.error_outline),
+      FeedbackKind.hint =>
+        (s.tertiaryContainer, s.onTertiaryContainer, Icons.lightbulb_outline),
     };
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(8),
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 250),
+      child: Container(
+        key: ValueKey('${feedback.kind}:${feedback.text}'),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 24, color: fg),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(feedback.text, style: TextStyle(color: fg)),
+            ),
+          ],
+        ),
       ),
-      child: Row(
-        children: [
-          Icon(iconData, size: 24),
-          const SizedBox(width: 12),
-          Expanded(child: Text(feedback.text)),
-        ],
+    );
+  }
+}
+
+class _CompletedCard extends StatelessWidget {
+  const _CompletedCard({required this.onRetry, required this.onBack});
+
+  final VoidCallback onRetry;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      color: theme.colorScheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Icon(Icons.emoji_events,
+                size: 48, color: theme.colorScheme.onPrimaryContainer),
+            const SizedBox(height: 8),
+            Text(
+              'Задание выполнено!',
+              style: theme.textTheme.titleLarge?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.replay),
+                    label: const Text('Повторить'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: onBack,
+                    icon: const Icon(Icons.list),
+                    label: const Text('К урокам'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -234,10 +385,8 @@ class _PracticeControls extends StatelessWidget {
     return Column(
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _ActionButton(
-                icon: Icons.refresh, label: 'Сброс', onTap: c.reset),
+            _ActionButton(icon: Icons.refresh, label: 'Сброс', onTap: c.reset),
             _ActionButton(
                 icon: Icons.backspace_outlined, label: 'Стереть', onTap: c.erase),
             _ActionButton(
@@ -251,24 +400,22 @@ class _PracticeControls extends StatelessWidget {
                 label: 'Кандидаты',
                 onTap: c.fillCandidates),
             _ActionButton(
-                icon: Icons.lightbulb_outline,
-                label: 'Подсказка',
-                onTap: c.hint),
+                icon: Icons.lightbulb_outline, label: 'Подсказка', onTap: c.hint),
           ],
         ),
         const SizedBox(height: 16),
         Row(
           children: List.generate(9, (i) {
             final n = i + 1;
-            final count = 9 - c.digitCount(n);
+            final remaining = 9 - c.digitCount(n);
             return Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 2),
                 child: _NumberButton(
                   number: n,
-                  remaining: count,
+                  remaining: remaining,
                   notesMode: c.notesMode,
-                  onTap: count > 0 ? () => c.enterNumber(n) : null,
+                  onTap: remaining > 0 ? () => c.enterNumber(n) : null,
                 ),
               ),
             );
@@ -297,25 +444,34 @@ class _ActionButton extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final color = onTap == null ? colors.outline : colors.primary;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Column(
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: active ? colors.primaryContainer : Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+          child: Column(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: active ? colors.primaryContainer : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 24),
               ),
-              child: Icon(icon, color: color, size: 24),
-            ),
-            const SizedBox(height: 2),
-            Text(label, style: TextStyle(color: color, fontSize: 11)),
-          ],
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(color: color, fontSize: 11),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -375,6 +531,30 @@ class _NumberButton extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ───────────────────────── Общее ─────────────────────────
+
+/// Прокручиваемый контент, ограниченный по ширине и выровненный по центру.
+class _CenteredScroll extends StatelessWidget {
+  const _CenteredScroll({required this.child, required this.maxWidth});
+
+  final Widget child;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          child: child,
         ),
       ),
     );
