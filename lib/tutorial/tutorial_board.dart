@@ -3,13 +3,14 @@ import 'package:flutter/material.dart';
 import 'lesson_data.dart';
 
 /// Цвет подсветки клетки для разметки урока.
-Color markBackground(MarkColor color, ColorScheme s) => switch (color) {
+Color markBackground(ColorScheme s, MarkColor color) => switch (color) {
       MarkColor.focus => s.primary.withValues(alpha: 0.35),
       MarkColor.related => s.tertiary.withValues(alpha: 0.18),
       MarkColor.pattern => s.secondary.withValues(alpha: 0.30),
       MarkColor.remove => s.error.withValues(alpha: 0.25),
       MarkColor.success => Colors.green.withValues(alpha: 0.35),
     };
+
 
 /// Доска 9×9 для уроков: пример (только просмотр) или практика (с нажатиями).
 class TutorialBoard extends StatelessWidget {
