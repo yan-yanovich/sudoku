@@ -113,8 +113,8 @@ class GameController extends ChangeNotifier {
     isPaused = false;
     notifyListeners();
 
-    final requestId = ++_generationId;
-    final puzzle = await storage.puzzleCache.get(difficulty); // ← изменение
+     final requestId = ++_generationId;
+    final puzzle = await storage.puzzleCache.get(difficulty);
     if (_disposed || requestId != _generationId) return;
 
     board = copyGrid(puzzle.puzzle);
