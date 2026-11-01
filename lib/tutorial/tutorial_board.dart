@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'lesson_data.dart';
+import 'practice_controller.dart';
 
 /// Цвет подсветки клетки для разметки урока.
 Color markBackground(ColorScheme s, MarkColor color) => switch (color) {
@@ -10,7 +11,6 @@ Color markBackground(ColorScheme s, MarkColor color) => switch (color) {
       MarkColor.remove => s.error.withValues(alpha: 0.25),
       MarkColor.success => Colors.green.withValues(alpha: 0.35),
     };
-
 
 /// Доска 9×9 для уроков: пример (только просмотр) или практика (с нажатиями).
 class TutorialBoard extends StatelessWidget {
@@ -26,25 +26,13 @@ class TutorialBoard extends StatelessWidget {
     this.onCellTap,
   });
 
-  /// Текущие значения (0 — пусто).
   final List<List<int>> board;
-
-  /// Подсветка и подписи из урока.
   final List<Mark> marks;
-
-  /// Какие клетки — исходные подсказки. Если null — все непустые.
   final List<List<bool>>? fixed;
-
-  /// Кандидаты (заметки) по клеткам.
   final List<List<Set<int>>>? notes;
-
-  /// Если задано — неверные цифры подсвечиваются красным.
   final List<List<int>>? solution;
-
   final int? selectedRow;
   final int? selectedCol;
-
-  /// Если null — доска только для просмотра.
   final void Function(int row, int col)? onCellTap;
 
   @override
@@ -131,7 +119,7 @@ class _TutorialCell extends StatelessWidget {
     } else if (isWrong) {
       background = colors.errorContainer;
     } else if (mark?.color != null) {
-      background = markBackground(mark!.color!, colors);
+      background = markBackground(colors, mark!.color!);
     } else if (value != 0 && value == selectedValue) {
       background = colors.primary.withValues(alpha: 0.2);
     }
@@ -143,7 +131,6 @@ class _TutorialCell extends StatelessWidget {
     final bottom =
         row == 8 ? BorderSide.none : (row == 2 || row == 5 ? thick : thin);
 
-    // Текст из разметки урока (например, ответ) имеет приоритет.
     final markText = mark?.text;
     final displayText = markText ?? (value != 0 ? '$value' : null);
 
@@ -264,7 +251,7 @@ class MarkLegend extends StatelessWidget {
                 width: 14,
                 height: 14,
                 decoration: BoxDecoration(
-                  color: markBackground(c, colors),
+                  color: markBackground(colors, c),
                   border: Border.all(color: colors.outline, width: 0.5),
                   borderRadius: BorderRadius.circular(3),
                 ),
@@ -274,6 +261,40 @@ class MarkLegend extends StatelessWidget {
             ],
           ),
       ],
+    );
+  }
+}
+
+/// Доска примера урока (только просмотр).
+class ExampleBoard extends StatelessWidget {
+  const ExampleBoard({super.key, required this.example});
+
+  final LessonExample example;
+
+  @override
+  Widget build(BuildContext context) =>
+      TutorialBoard(board: example.board, marks: example.marks);
+}
+
+/// Интерактивная доска практики.
+class PracticeBoard extends StatelessWidget {
+  const PracticeBoard({super.key, required this.controller});
+
+  final PracticeController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) => TutorialBoard(
+        board: controller.board,
+        fixed: controller.fixed,
+        notes: controller.notes,
+        solution: controller.solution,
+        selectedRow: controller.selectedRow,
+        selectedCol: controller.selectedCol,
+        onCellTap: controller.selectCell,
+      ),
     );
   }
 }
