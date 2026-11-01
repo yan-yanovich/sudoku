@@ -92,11 +92,13 @@ class GameController extends ChangeNotifier {
     return 9 - placed;
   }
 
-  bool get _canEdit =>
-      isPlaying &&
-      !isPaused &&
-      selectedRow != null &&
-      !fixed[selectedRow!][selectedCol!];
+  bool get _canEdit {
+    if (!isPlaying || isPaused || selectedRow == null) return false;
+    final r = selectedRow!, c = selectedCol!;
+    if (fixed[r][c]) return false;
+    // Верно поставленную цифру менять нельзя
+    return board[r][c] == 0 || board[r][c] != solution[r][c];
+  }
 
   // ---------- Жизненный цикл игры ----------
 
