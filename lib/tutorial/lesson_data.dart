@@ -130,10 +130,28 @@ class Lesson {
 
 // ========== Базовые поля ==========
 
-List<List<int>> parseRows(List<String> rows) => [
-      for (final row in rows)
-        [for (final ch in row.split('')) ch == '.' ? 0 : int.parse(ch)],
-    ];
+List<List<int>> parseRows(List<String> rows) {
+  if (rows.length != 9) {
+    throw FormatException(
+        'Поле судоку должно содержать 9 строк, получено ${rows.length}');
+  }
+  return [
+    for (final (i, row) in rows.indexed) _parseRow(i, row),
+  ];
+}
+
+final _rowPattern = RegExp(r'^[1-9.]{9}$');
+
+List<int> _parseRow(int index, String row) {
+  if (!_rowPattern.hasMatch(row)) {
+    throw FormatException(
+      'Строка ${index + 1} поля судоку некорректна: "$row". '
+      'Ожидается 9 символов: цифры 1–9 или точка.',
+    );
+  }
+  return [for (final ch in row.split('')) ch == '.' ? 0 : int.parse(ch)];
+}
+
 
 /// Проверенное решённое поле, из него строятся все практики.
 const List<String> baseSolution = [
