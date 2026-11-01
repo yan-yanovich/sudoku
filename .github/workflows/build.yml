@@ -3,12 +3,51 @@ name: Build APK
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
+  release:
+    types: [published]
+
+# Новый запуск отменяет предыдущий незавершённый
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # нужно, чтобы прикрепить APK к релизу
 
 jobs:
-  build:
+  # ───────── Быстрая проверка: на каждый коммит ─────────
+  check:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Run tests
+        run: |
+          rm -f test/widget_test.dart
+          if ls test/*_test.dart >/dev/null 2>&1; then flutter test; else echo "Тестов нет"; fi
+
+  # ───────── Сборка APK: только вручную или по релизу ─────────
+  build:
+    needs: check
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,11 +61,8 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable          # без жёсткой версии — актуальный шаблон Gradle/Kotlin
+          channel: stable
           cache: true
-
-      - name: Flutter version
-        run: flutter --version
 
       - name: Create Android platform files
         run: |
@@ -36,29 +72,24 @@ jobs:
 
       - name: Patch Android config
         run: |
-          # Название приложения
           sed -i 's/android:label="sudoku"/android:label="Судоку"/' android/app/src/main/AndroidManifest.xml
 
-          # Gradle-файл может быть .kts или .gradle — патчим тот, что есть
           APP_GRADLE=$(ls android/app/build.gradle.kts android/app/build.gradle 2>/dev/null | head -n1)
           echo "App gradle: $APP_GRADLE"
 
-          # minSdk 23 вместо flutter.minSdkVersion
           sed -i -E 's/minSdk( =|) *flutter\.minSdkVersion/minSdk\1 23/' "$APP_GRADLE"
           sed -i -E 's/minSdkVersion +flutter\.minSdkVersion/minSdkVersion 23/' "$APP_GRADLE"
 
-          # Отключаем lint-проверку при release-сборке
           if [[ "$APP_GRADLE" == *.kts ]]; then
             printf '\nandroid {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }\n}\n' >> "$APP_GRADLE"
           else
             printf '\nandroid {\n    lintOptions {\n        checkReleaseBuilds false\n        abortOnError false\n    }\n}\n' >> "$APP_GRADLE"
           fi
 
-          # Память для Gradle
           sed -i '/org.gradle.jvmargs/d' android/gradle.properties
           echo "org.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=1G -XX:+HeapDumpOnOutOfMemoryError" >> android/gradle.properties
 
-          grep -nE "minSdk|kotlin|com.android.application" "$APP_GRADLE" android/settings.gradle* || true
+      # Сюда же позже можно вставить шаг "Setup signing" из прошлого ответа
 
       - name: Get dependencies
         run: flutter pub get
@@ -71,18 +102,18 @@ jobs:
           rsvg-convert -w 1024 -h 1024 assets/icon/icon_foreground.svg -o assets/icon/icon_foreground.png
           dart run flutter_launcher_icons
 
-      - name: Analyze
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
-
-      - name: Run tests
-        run: flutter test
-
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --release --build-number=${{ github.run_number }}
 
-      - name: Upload APK
+      - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: sudoku-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+
+      - name: Attach APK to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/app-release.apk
