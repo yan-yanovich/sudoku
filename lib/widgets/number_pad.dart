@@ -89,23 +89,20 @@ class _NumberButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Padding(
-          padding: EdgeInsets.symmetric(vertical: notesMode ? 6 : 8),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(
             children: [
               Text(
                 '$number',
                 style: TextStyle(
-                  fontSize: notesMode ? 16 : 24,
+                  fontSize: 24,
                   fontWeight: FontWeight.w600,
                   color: foreground,
                 ),
               ),
               Text(
                 enabled ? '$remaining' : '✓',
-                style: TextStyle(
-                  fontSize: notesMode ? 9 : 11,
-                  color: colors.outline,
-                ),
+                style: TextStyle(fontSize: 11, color: colors.outline),
               ),
             ],
           ),
