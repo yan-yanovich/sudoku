@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../logic/sudoku_generator.dart';
 import '../models/game_mode.dart';
 import '../models/game_stats.dart';
+import 'puzzle_cache.dart';
 
 /// Краткая информация о сохранённой игре для главного экрана.
 class SavedGameInfo {
@@ -24,9 +25,16 @@ class AppStorage {
   AppStorage._(this._prefs);
 
   final SharedPreferences _prefs;
+    late final PuzzleCache puzzleCache;
 
-  static Future<AppStorage> init() async =>
-      AppStorage._(await SharedPreferences.getInstance());
+  
+
+    static Future<AppStorage> init() async {
+    final storage = AppStorage._(await SharedPreferences.getInstance());
+    storage.puzzleCache = await PuzzleCache.init();
+    return storage;
+  }
+
 
   static const _savedGameKey = 'saved_game';
   static const _themeKey = 'theme_mode';
