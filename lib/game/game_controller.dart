@@ -8,7 +8,6 @@ import '../services/app_storage.dart';
 
 enum GameStatus { loading, playing, won, lost }
 
-/// Состояние клетки до изменения, нужно для отмены хода.
 class _CellSnapshot {
   _CellSnapshot(this.row, this.col, this.value, Set<int> notes)
       : notes = Set.of(notes);
@@ -26,7 +25,6 @@ class GameController extends ChangeNotifier {
     required this.mode,
   });
 
-  /// Восстановление игры из сохранения.
   factory GameController.restore(AppStorage storage, Map<String, dynamic> json) {
     final controller = GameController(
       storage: storage,
@@ -47,8 +45,8 @@ class GameController extends ChangeNotifier {
   GameStatus status = GameStatus.loading;
   List<List<int>> board = [];
   List<List<int>> solution = [];
-  List<List<bool>> fixed = []; // исходные и подсказанные клетки
-  List<List<Set<int>>> notes = []; // заметки (карандаш)
+  List<List<bool>> fixed = [];
+  List<List<Set<int>>> notes = [];
 
   int? selectedRow;
   int? selectedCol;
@@ -56,14 +54,23 @@ class GameController extends ChangeNotifier {
   bool isPaused = false;
   int mistakes = 0;
   int hintsLeft = maxHints;
-  Duration elapsed = Duration.zero;
+
+  // ★ Время хранится в отдельном ValueNotifier.
+  //   Его изменение НЕ вызывает перерисовку всего экрана.
+  final ValueNotifier<Duration> _elapsed = ValueNotifier(Duration.zero);
+
+  /// ★ Подписка только на время — для виджета таймера.
+  ValueListenable<Duration> get elapsedListenable => _elapsed;
+
+  /// ★ Обычное свойство, как раньше: используется в сохранении,
+  ///   статистике и диалоге победы.
+  Duration get elapsed => _elapsed.value;
+  set elapsed(Duration value) => _elapsed.value = value;
 
   final List<List<_CellSnapshot>> _history = [];
   Timer? _timer;
   int _generationId = 0;
   bool _disposed = false;
-
-  // ---------- Геттеры ----------
 
   bool get isLoading => status == GameStatus.loading;
   bool get isPlaying => status == GameStatus.playing;
@@ -92,15 +99,11 @@ class GameController extends ChangeNotifier {
     return 9 - placed;
   }
 
-  bool get _canEdit {
-    if (!isPlaying || isPaused || selectedRow == null) return false;
-    final r = selectedRow!, c = selectedCol!;
-    if (fixed[r][c]) return false;
-    // Верно поставленную цифру менять нельзя
-    return board[r][c] == 0 || board[r][c] != solution[r][c];
-  }
-
-  // ---------- Жизненный цикл игры ----------
+  bool get _canEdit =>
+      isPlaying &&
+      !isPaused &&
+      selectedRow != null &&
+      !fixed[selectedRow!][selectedCol!];
 
   Future<void> startNewGame() async {
     if (isPlaying) storage.recordAbandoned(difficulty);
@@ -110,7 +113,6 @@ class GameController extends ChangeNotifier {
     isPaused = false;
     notifyListeners();
 
-    // Генерация в отдельном изоляте, UI не подтормаживает
     final requestId = ++_generationId;
     final puzzle = await compute(generatePuzzle, difficulty);
     if (_disposed || requestId != _generationId) return;
@@ -149,7 +151,6 @@ class GameController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Сохраняет текущую партию (только если игра идёт).
   void save() {
     if (isPlaying) storage.saveGame(toJson());
   }
@@ -157,8 +158,9 @@ class GameController extends ChangeNotifier {
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      // ★ Обновляется только _elapsed → перерисуется только текст таймера.
+      //   notifyListeners() здесь больше НЕ вызывается.
       elapsed += const Duration(seconds: 1);
-      notifyListeners();
     });
   }
 
@@ -182,8 +184,6 @@ class GameController extends ChangeNotifier {
     }
     _finish(GameStatus.won);
   }
-
-  // ---------- Действия игрока ----------
 
   void selectCell(int r, int c) {
     if (!isPlaying || isPaused) return;
@@ -215,7 +215,6 @@ class GameController extends ChangeNotifier {
 
     final correct = number == solution[r][c];
     if (correct) {
-      // Убираем эту цифру из заметок в той же строке, столбце и квадрате
       for (final (pr, pc) in _peers(r, c)) {
         if (notes[pr][pc].contains(number)) {
           changes.add(_snapshot(pr, pc));
@@ -236,7 +235,7 @@ class GameController extends ChangeNotifier {
   }
 
   void _toggleNote(int r, int c, int number) {
-    if (board[r][c] != 0) return; // заметки только в пустых клетках
+    if (board[r][c] != 0) return;
     _history.add([_snapshot(r, c)]);
     if (!notes[r][c].remove(number)) notes[r][c].add(number);
     save();
@@ -260,7 +259,7 @@ class GameController extends ChangeNotifier {
     if (!isPlaying || isPaused || _history.isEmpty) return;
     final changes = _history.removeLast();
     for (final s in changes) {
-      if (fixed[s.row][s.col]) continue; // подсказанные клетки не откатываем
+      if (fixed[s.row][s.col]) continue;
       board[s.row][s.col] = s.value;
       notes[s.row][s.col] = Set.of(s.notes);
     }
@@ -289,15 +288,12 @@ class GameController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------- Вспомогательное ----------
-
   _CellSnapshot _snapshot(int r, int c) =>
       _CellSnapshot(r, c, board[r][c], notes[r][c]);
 
   static List<List<Set<int>>> _emptyNotes() =>
       List.generate(9, (_) => List.generate(9, (_) => <int>{}));
 
-  /// Все клетки в той же строке, столбце и квадрате (без самой клетки).
   static Iterable<(int, int)> _peers(int r, int c) sync* {
     for (var i = 0; i < 9; i++) {
       if (i != c) yield (r, i);
@@ -311,8 +307,6 @@ class GameController extends ChangeNotifier {
       }
     }
   }
-
-  // ---------- Сериализация ----------
 
   Map<String, dynamic> toJson() => {
         'difficulty': difficulty.name,
@@ -353,6 +347,7 @@ class GameController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _elapsed.dispose(); // ★ освобождаем ValueNotifier
     super.dispose();
   }
 }
