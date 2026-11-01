@@ -105,7 +105,7 @@ class GameController extends ChangeNotifier {
       selectedRow != null &&
       !fixed[selectedRow!][selectedCol!];
 
-  Future<void> startNewGame() async {
+   Future<void> startNewGame() async {
     if (isPlaying) storage.recordAbandoned(difficulty);
     storage.clearGame();
     _timer?.cancel();
@@ -114,7 +114,7 @@ class GameController extends ChangeNotifier {
     notifyListeners();
 
     final requestId = ++_generationId;
-    final puzzle = await compute(generatePuzzle, difficulty);
+    final puzzle = await storage.puzzleCache.get(difficulty); // ← изменение
     if (_disposed || requestId != _generationId) return;
 
     board = copyGrid(puzzle.puzzle);
@@ -134,6 +134,8 @@ class GameController extends ChangeNotifier {
     _startTimer();
     save();
     notifyListeners();
+  }
+
   }
 
   void pause() {
