@@ -338,4 +338,6 @@ class GameController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
-    _
+    _elapsed.dispose();
+    super.dispose();
+  }
