@@ -145,7 +145,7 @@ class SudokuGenerator {
         final box = r ~/ 3 * 3 + c ~/ 3;
         final used = rowMask[r] | colMask[c] | boxMask[box];
         final available = ~used & 0x3FE; // биты 1..9
-        final count = available.bitCount;
+        final count = _popCount(available);
 
         if (count == 0) return 0; // нет кандидатов — тупик
         if (count < minCandidates) {
@@ -225,6 +225,16 @@ class SudokuGenerator {
 
 List<List<int>> copyGrid(List<List<int>> grid) =>
     grid.map((row) => List<int>.from(row)).toList();
+
+/// Подсчёт единичных битов (для Dart < 3.4).
+int _popCount(int n) {
+  var count = 0;
+  while (n != 0) {
+    count++;
+    n &= n - 1;
+  }
+  return count;
+}
 
 SudokuPuzzle generatePuzzle(Difficulty difficulty) =>
     SudokuGenerator().generate(difficulty);
