@@ -283,10 +283,34 @@ class _InfoBar extends StatelessWidget {
           children: [
             const Icon(Icons.timer_outlined, size: 20),
             const SizedBox(width: 4),
-            Text(formatDuration(c.elapsed), style: style),
+            _TimerText(listenable: c.elapsedListenable, style: style),
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Текст таймера. Каждую секунду перестраивается ТОЛЬКО этот виджет.
+class _TimerText extends StatelessWidget {
+  const _TimerText({required this.listenable, this.style});
+
+  final ValueListenable<Duration> listenable;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: ValueListenableBuilder<Duration>(
+        valueListenable: listenable,
+        builder: (context, elapsed, _) => Text(
+          formatDuration(elapsed),
+          // Цифры одинаковой ширины — текст не «дрожит» при смене секунд
+          style: style?.copyWith(
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ),
     );
   }
 }
