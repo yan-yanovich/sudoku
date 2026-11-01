@@ -26,7 +26,7 @@ class NumberPad extends StatelessWidget {
             _ActionButton(
               icon: Icons.lightbulb_outline,
               label: 'Подсказка (${c.hintsLeft})',
-              onTap: c.hintsLeft > 0 ? c.hint : null,
+              onTap: c.hintsLeft > 0 ? () => _handleHint(context, c) : null,
             ),
           ],
         ),
@@ -50,6 +50,19 @@ class NumberPad extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  void _handleHint(BuildContext context, GameController c) {
+    if (c.selectedRow == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Выберите ячейку для подсказки'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    c.hint();
   }
 }
 
@@ -154,4 +167,3 @@ class _ActionButton extends StatelessWidget {
     );
   }
 }
-
