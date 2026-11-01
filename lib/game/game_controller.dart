@@ -55,15 +55,8 @@ class GameController extends ChangeNotifier {
   int mistakes = 0;
   int hintsLeft = maxHints;
 
-  // ★ Время хранится в отдельном ValueNotifier.
-  //   Его изменение НЕ вызывает перерисовку всего экрана.
   final ValueNotifier<Duration> _elapsed = ValueNotifier(Duration.zero);
-
-  /// ★ Подписка только на время — для виджета таймера.
   ValueListenable<Duration> get elapsedListenable => _elapsed;
-
-  /// ★ Обычное свойство, как раньше: используется в сохранении,
-  ///   статистике и диалоге победы.
   Duration get elapsed => _elapsed.value;
   set elapsed(Duration value) => _elapsed.value = value;
 
@@ -105,7 +98,7 @@ class GameController extends ChangeNotifier {
       selectedRow != null &&
       !fixed[selectedRow!][selectedCol!];
 
-   Future<void> startNewGame() async {
+  Future<void> startNewGame() async {
     if (isPlaying) storage.recordAbandoned(difficulty);
     storage.clearGame();
     _timer?.cancel();
@@ -113,7 +106,7 @@ class GameController extends ChangeNotifier {
     isPaused = false;
     notifyListeners();
 
-     final requestId = ++_generationId;
+    final requestId = ++_generationId;
     final puzzle = await storage.puzzleCache.get(difficulty);
     if (_disposed || requestId != _generationId) return;
 
@@ -134,8 +127,6 @@ class GameController extends ChangeNotifier {
     _startTimer();
     save();
     notifyListeners();
-  }
-
   }
 
   void pause() {
@@ -160,8 +151,6 @@ class GameController extends ChangeNotifier {
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      // ★ Обновляется только _elapsed → перерисуется только текст таймера.
-      //   notifyListeners() здесь больше НЕ вызывается.
       elapsed += const Duration(seconds: 1);
     });
   }
@@ -349,7 +338,4 @@ class GameController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
-    _elapsed.dispose(); // ★ освобождаем ValueNotifier
-    super.dispose();
-  }
-}
+    _
