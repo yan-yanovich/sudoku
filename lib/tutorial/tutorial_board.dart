@@ -286,15 +286,23 @@ class PracticeBoard extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: controller,
-      builder: (context, _) => TutorialBoard(
-        board: controller.board,
-        fixed: controller.fixed,
-        notes: controller.notes,
-        solution: controller.solution,
-        selectedRow: controller.selectedRow,
-        selectedCol: controller.selectedCol,
-        onCellTap: controller.selectCell,
-      ),
+      builder: (context, _) {
+        final hint = controller.hintCell;
+        return TutorialBoard(
+          board: controller.board,
+          fixed: controller.given,
+          notes: controller.notes,
+          solution: controller.solution,
+          selectedRow: controller.selectedRow,
+          selectedCol: controller.selectedCol,
+          onCellTap: (r, c) => controller.selectCell(r, c),
+          marks: [
+            for (final (r, c) in controller.hintArea)
+              Mark(r, c, color: MarkColor.related),
+            if (hint != null) Mark(hint.$1, hint.$2, color: MarkColor.focus),
+          ],
+        );
+      },
     );
   }
 }
